@@ -116,6 +116,9 @@ This system implements a computer vision pipeline that:
 ---
 
 # 📂 Project Structure
+# 📂 Project Structure
+
+```bash
 deepfake-detection-system/
 │
 ├── data/
@@ -160,6 +163,8 @@ deepfake-detection-system/
 ├── app.py
 ├── requirements.txt
 └── README.md
+```
+
 ---
 
 ## 🛠 Tech Stack
