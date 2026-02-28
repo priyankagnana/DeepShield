@@ -238,6 +238,5 @@ deepfake-detection-system/
 | Priyanka | ML Lead (Model + Training Head) |
 |----------|----------------------------------|
 | Aditi   | System + Backend Engineer |
-|----------|----------------------------------|
 | Aparajita | Frontend + Visualization Engineer |
 
