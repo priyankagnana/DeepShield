@@ -60,7 +60,7 @@ def train(max_epochs=50, patience=12, warmup_epochs=5):
     # Phase 1 optimizer — only classifier params are trainable at this point
     optimizer = optim.Adam(
         filter(lambda p: p.requires_grad, model.parameters()),
-        lr=1e-3, weight_decay=1e-4,
+        lr=1e-4, weight_decay=1e-4,
     )
 
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
@@ -84,7 +84,7 @@ def train(max_epochs=50, patience=12, warmup_epochs=5):
             # lower LR to avoid overwriting pretrained weights aggressively
             optimizer = optim.Adam(
                 filter(lambda p: p.requires_grad, model.parameters()),
-                lr=1e-4, weight_decay=1e-4,
+                lr=1e-5, weight_decay=1e-4,
             )
             scheduler = optim.lr_scheduler.ReduceLROnPlateau(
                 optimizer, mode="max", factor=0.5, patience=4, min_lr=1e-6
