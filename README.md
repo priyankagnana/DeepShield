@@ -321,7 +321,43 @@ Follow these commands **in order** from the root of the project directory.
 
 ### Prerequisites
 
-Make sure dependencies are installed before starting:
+#### 1. System Libraries (macOS — must be done before creating the venv)
+
+Some Python modules require native system libraries that are not installed via `pip`. If these are missing, Python itself will be compiled without support for them and you will see errors like `ModuleNotFoundError: No module named '_lzma'`.
+
+Install them with Homebrew **before** running `pyenv install` or creating the venv:
+
+```bash
+brew install xz          # required for Python's _lzma module (used by torchvision)
+brew install cmake       # required by some OpenCV build variants
+brew install libomp      # optional: OpenMP support for scikit-learn on Apple Silicon
+```
+
+> If you already installed Python via pyenv **before** installing `xz`, you must reinstall Python so it compiles with `lzma` support:
+> ```bash
+> pyenv uninstall 3.12.2
+> pyenv install 3.12.2
+> ```
+> Then recreate the venv (see below).
+
+#### 2. Python Version
+
+This project requires **Python 3.10 or higher**. Recommended: **3.12.x** via pyenv.
+
+```bash
+pyenv install 3.12.2
+pyenv local 3.12.2
+```
+
+#### 3. Virtual Environment
+
+```bash
+python3 -m venv venv
+source venv/bin/activate     # macOS / Linux
+# venv\Scripts\activate      # Windows
+```
+
+#### 4. Python Dependencies
 
 ```bash
 pip install -r requirements.txt
@@ -372,7 +408,12 @@ data/
 
 ### Step 3 — Prepare Train / Val / Test Splits
 
-The training code (`training/dataset.py`) expects the processed frames to be organised into **train**, **val**, and **test** sub-folders using PyTorch's `ImageFolder` convention:
+```bash
+python -m preprocessing.split_train_val_test
+```
+
+**What it does:**
+Reads the frame images from `data/processed/real/` and `data/processed/fake/` and groups them **by video ID** (all frames from the same source video are kept together). It then assigns each video to one split — **70 % train, 15 % val, 15 % test** — so no frames from the same video leak across splits. Copies are written to the `ImageFolder`-compatible layout that `training/dataset.py` expects:
 
 ```
 data/processed/
@@ -385,32 +426,6 @@ data/processed/
 └── test/
     ├── real/
     └── fake/
-```
-
-Run the following one-liner to split (80 % train / 10 % val / 10 % test):
-
-```bash
-python - <<'EOF'
-import os, shutil, random
-
-random.seed(42)
-base = "data/processed"
-
-for cls in ("real", "fake"):
-    frames = os.listdir(os.path.join(base, cls))
-    random.shuffle(frames)
-    n = len(frames)
-    splits = {"train": frames[:int(0.8*n)],
-              "val":   frames[int(0.8*n):int(0.9*n)],
-              "test":  frames[int(0.9*n):]}
-    for split, files in splits.items():
-        dest = os.path.join(base, split, cls)
-        os.makedirs(dest, exist_ok=True)
-        for f in files:
-            shutil.copy(os.path.join(base, cls, f), os.path.join(dest, f))
-
-print("✅ Train/Val/Test split done.")
-EOF
 ```
 
 ---
@@ -479,24 +494,34 @@ Launches a local web app in your browser. You can:
 ### Quick Reference — All Commands in Order
 
 ```bash
-# 1. Install dependencies
+# ── System setup (macOS, one-time) ──────────────────────────────────────────
+brew install xz cmake libomp        # system libs required before Python compile
+pyenv install 3.12.2 && pyenv local 3.12.2
+
+# ── Python environment ───────────────────────────────────────────────────────
+python3 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
 
-# 2. Split raw videos by label
+# ── Data pipeline ────────────────────────────────────────────────────────────
+# 1. Sort raw videos into REAL / FAKE folders using metadata.json
 python -m preprocessing.dataset_split
 
-# 3. Extract frames (30 per video, 224×224)
+# 2. Extract 30 frames per video at 224×224
 python -m preprocessing.frame_extractor
 
-# 4. Create train/val/test splits  (run the inline script from Step 3 above)
+# 3. Split frames into train / val / test (70 / 15 / 15, grouped by video)
+python -m preprocessing.split_train_val_test
 
-# 5. Train the model
+# ── Model ────────────────────────────────────────────────────────────────────
+# 4. Train the model
 python -m training.train
 
-# 6. Evaluate on test set
+# 5. Evaluate on test set
 python -m training.evaluate
 
-# 7. Launch the demo app
+# ── Demo ─────────────────────────────────────────────────────────────────────
+# 6. Launch the Streamlit app
 streamlit run app.py
 ```
 

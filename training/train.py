@@ -2,14 +2,25 @@ import os
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from tqdm import tqdm
 
 from model.cnn_model import DeepfakeCNN
 from training.dataset import get_dataloaders
 from training.early_stopping import EarlyStopping
 
+
+def _get_device() -> torch.device:
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    if torch.backends.mps.is_available():
+        return torch.device("mps")
+    return torch.device("cpu")
+
+
 def train(max_epochs=50, patience=5):
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = _get_device()
+    print(f"Using device: {device}")
     os.makedirs("saved_models", exist_ok=True)
 
     train_loader, val_loader, _ = get_dataloaders()
@@ -22,25 +33,25 @@ def train(max_epochs=50, patience=5):
 
     best_val_loss = None
 
-    for epoch in range(max_epochs):
+    epoch_bar = tqdm(range(max_epochs), desc="Training", unit="epoch")
+    for epoch in epoch_bar:
 
         # Train
         model.train()
         train_loss = 0.0
-        for images, labels in train_loader:
-
+        train_bar = tqdm(train_loader, desc=f"  Epoch {epoch+1}/{max_epochs} [Train]", leave=False)
+        for images, labels in train_bar:
             images = images.to(device)
             labels = labels.float().unsqueeze(1).to(device)
 
             optimizer.zero_grad()
-
             outputs = model(images)
             loss = criterion(outputs, labels)
-
             loss.backward()
             optimizer.step()
 
             train_loss += loss.item()
+            train_bar.set_postfix(loss=f"{loss.item():.4f}")
 
         train_loss /= len(train_loader)
 
@@ -50,8 +61,8 @@ def train(max_epochs=50, patience=5):
         correct = 0
         total = 0
         with torch.no_grad():
-            for images, labels in val_loader:
-
+            val_bar = tqdm(val_loader, desc=f"  Epoch {epoch+1}/{max_epochs} [Val]  ", leave=False)
+            for images, labels in val_bar:
                 images = images.to(device)
                 labels = labels.float().unsqueeze(1).to(device)
 
@@ -62,6 +73,7 @@ def train(max_epochs=50, patience=5):
                 preds = (outputs.sigmoid() >= 0.5).float()
                 correct += (preds == labels).sum().item()
                 total += labels.size(0)
+                val_bar.set_postfix(loss=f"{loss.item():.4f}")
 
         val_loss /= len(val_loader)
         val_accuracy = correct / total if total > 0 else 0.0
@@ -71,6 +83,11 @@ def train(max_epochs=50, patience=5):
             best_val_loss = val_loss
             torch.save(model.state_dict(), "saved_models/best_model.pth")
 
+        epoch_bar.set_postfix(
+            train_loss=f"{train_loss:.4f}",
+            val_loss=f"{val_loss:.4f}",
+            val_acc=f"{val_accuracy:.4f}",
+        )
         print(f"Epoch {epoch+1}/{max_epochs}  train_loss={train_loss:.4f}  val_loss={val_loss:.4f}  val_acc={val_accuracy:.4f}")
 
         early_stopping(val_loss)
