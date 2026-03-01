@@ -16,6 +16,8 @@ Deepfake technology uses generative AI to create highly realistic synthetic face
 - Runs entirely on your machine — **no cloud calls, no data leaves your device**
 
 ---
+## Drive link 
+https://drive.google.com/drive/folders/1kyWpFCtVWmF7qZGzEp4oOrDCnI8K6OAN?role=writer
 
 ## 🏗️ System Architecture
 
