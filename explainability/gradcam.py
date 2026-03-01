@@ -21,9 +21,11 @@ def generate_gradcam(model, image_tensor, target_layer=None):
         heatmap: (H, W) numpy array, values in [0, 1].
     """
     if target_layer is None:
-        target_layer = getattr(model, "conv2", None)
+        target_layer = getattr(model, "conv2", None) or getattr(model, "backbone", None)
+        if hasattr(target_layer, "features"):
+            target_layer = target_layer.features[-1]
     if target_layer is None:
-        raise ValueError("target_layer must be provided or model must have 'conv2'")
+        raise ValueError("target_layer must be provided or model must have a 'backbone.features' or 'conv2'")
 
     device = next(model.parameters()).device
     image_tensor = image_tensor.to(device)
@@ -31,11 +33,16 @@ def generate_gradcam(model, image_tensor, target_layer=None):
         image_tensor = image_tensor.unsqueeze(0)
 
     activations = []
+    gradients = []
 
     def save_activation(module, input, output):
         activations.append(output)
 
-    handle = target_layer.register_forward_hook(save_activation)
+    def save_gradient(module, grad_input, grad_output):
+        gradients.append(grad_output[0])
+
+    fwd_handle = target_layer.register_forward_hook(save_activation)
+    bwd_handle = target_layer.register_full_backward_hook(save_gradient)
 
     model.zero_grad()
     output = model(image_tensor)
@@ -44,15 +51,16 @@ def generate_gradcam(model, image_tensor, target_layer=None):
     score = output[0, 0]
     score.backward()
 
-    handle.remove()
+    fwd_handle.remove()
+    bwd_handle.remove()
 
     if not activations:
         raise RuntimeError("No activations captured; check target_layer.")
+    if not gradients:
+        raise RuntimeError("Gradients not available; ensure backward() was called.")
 
     act = activations[0]
-    grad = act.grad
-    if grad is None:
-        raise RuntimeError("Gradients not available; ensure backward() was called.")
+    grad = gradients[0]
 
     # Grad-CAM: channel weights = global average of gradients
     weights = grad.mean(dim=(2, 3))

@@ -110,7 +110,7 @@ def predict_with_gradcam(model_path, image_path, device=None):
     tensor = preprocess_image(image_path, transform).to(device)
     tensor.requires_grad_(True)
 
-    heatmap = generate_gradcam(model, tensor, target_layer=model.conv2)
+    heatmap = generate_gradcam(model, tensor, target_layer=model.backbone.features[-1])
     with torch.no_grad():
         logit = model(tensor.detach())[0, 0].item()
     prob_real = torch.sigmoid(torch.tensor(logit)).item()
