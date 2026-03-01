@@ -1,17 +1,17 @@
-torch==2.8.0
-torchvision==0.23.0
-torchaudio==2.8.0
-opencv-python
+torch
+torchvision
+torchaudio
+opencv-python-headless
 Pillow
 numpy
 scikit-learn
 streamlit
-tqdm==4.67.3
+tqdm
 fastapi
 uvicorn[standard]
 python-multipart
 websockets
-# streamlit-webrtc  # requires ffmpeg + av; uncomment if ffmpeg is installed
-# av                # requires ffmpeg 7 + pkg-config + C compiler
+streamlit-webrtc
+av
 pandas
 plotly
