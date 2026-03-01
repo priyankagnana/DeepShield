@@ -1,6 +1,11 @@
 """
 Real-time inference: webcam or video file, same preprocessing as training, display Real/Fake (+ optional Grad-CAM).
 Run from project root: python -m inference.realtime_inference [--video path.mp4] [--gradcam]
+
+Optimizations:
+  - MPS device support (Apple Silicon)
+  - Frame skipping: inference runs every INFERENCE_EVERY frames to reduce lag
+  - Grad-CAM target layer correctly set to model.backbone.features[-1]
 """
 
 import argparse
@@ -9,25 +14,31 @@ import sys
 
 import cv2
 import torch
-import numpy as np
-from PIL import Image
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from model.cnn_model import DeepfakeCNN
 from inference.predict import get_transform, load_model, predict, preprocess_image
 
-# Optional Grad-CAM (can be disabled if not needed for speed)
-def _optional_gradcam(model, frame_bgr, tensor, device, show_overlay):
-    if not show_overlay:
-        return frame_bgr
+# Run model inference every N frames — keeps display smooth while reducing lag
+INFERENCE_EVERY = 3
+
+
+def _get_device() -> torch.device:
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    if torch.backends.mps.is_available():
+        return torch.device("mps")
+    return torch.device("cpu")
+
+
+def _optional_gradcam(model, frame_bgr, tensor, device):
     try:
         from explainability.gradcam import generate_gradcam
         from explainability.heatmap_utils import overlay_heatmap
         t = tensor.clone().detach().to(device).requires_grad_(True)
-        heatmap = generate_gradcam(model, t, target_layer=model.conv2)
+        heatmap = generate_gradcam(model, t, target_layer=model.backbone.features[-1])
         return overlay_heatmap(heatmap, frame_bgr.copy(), alpha=0.5)
     except Exception:
         return frame_bgr
@@ -36,9 +47,10 @@ def _optional_gradcam(model, frame_bgr, tensor, device, show_overlay):
 def run_realtime(video_path=None, model_path="saved_models/best_model.pth", show_gradcam=False):
     """
     video_path: None = webcam (0), else path to video file.
-    show_gradcam: if True, overlay Grad-CAM on frame (slower).
+    show_gradcam: if True, overlay Grad-CAM every INFERENCE_EVERY frames (slower).
     """
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = _get_device()
+    print(f"Using device: {device}")
     model, device = load_model(model_path, device)
     transform = get_transform()
 
@@ -47,30 +59,37 @@ def run_realtime(video_path=None, model_path="saved_models/best_model.pth", show
         print("Could not open video source (webcam or file).")
         return
 
+    label, confidence = "...", 0.0
+    frame_idx = 0
+
     while True:
         ret, frame = cap.read()
         if not ret:
             break
 
-        # Preprocess: BGR -> RGB, then same as training
-        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        tensor = preprocess_image(frame_rgb, transform)
+        # Only run inference every INFERENCE_EVERY frames to reduce lag
+        if frame_idx % INFERENCE_EVERY == 0:
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            tensor = preprocess_image(frame_rgb, transform)
 
-        with torch.no_grad():
-            label, confidence = predict(model, tensor, device)
+            with torch.no_grad():
+                label, confidence = predict(model, tensor, device)
 
-        # Optional Grad-CAM overlay
-        if show_gradcam:
-            frame = _optional_gradcam(model, frame, tensor, device, True)
+            if show_gradcam:
+                frame = _optional_gradcam(model, frame, tensor, device)
 
-        # Draw label and confidence on frame
+        # Overlay label on every displayed frame using the last known prediction
         text = f"{label} ({confidence:.2f})"
         color = (0, 255, 0) if label == "Real" else (0, 0, 255)
         cv2.putText(frame, text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
+        cv2.putText(frame, f"Frame {frame_idx}", (10, 60),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
 
-        cv2.imshow("DeepShield", frame)
+        cv2.imshow("DeepShield – press Q to quit", frame)
         if cv2.waitKey(1) & 0xFF == ord("q"):
             break
+
+        frame_idx += 1
 
     cap.release()
     cv2.destroyAllWindows()
