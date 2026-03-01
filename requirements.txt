@@ -1,17 +1,17 @@
-torch==2.10.0
-torchvision==0.25.0
-torchaudio==2.10.0
-opencv-python==4.13.0.92
-Pillow==12.1.1
-numpy==2.4.2
-scikit-learn==1.8.0
-streamlit==1.54.0
+torch==2.8.0
+torchvision==0.23.0
+torchaudio==2.8.0
+opencv-python
+Pillow
+numpy
+scikit-learn
+streamlit
 tqdm==4.67.3
 fastapi
 uvicorn[standard]
 python-multipart
 websockets
-streamlit-webrtc
-av
+# streamlit-webrtc  # requires ffmpeg + av; uncomment if ffmpeg is installed
+# av                # requires ffmpeg 7 + pkg-config + C compiler
 pandas
 plotly
