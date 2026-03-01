@@ -611,9 +611,84 @@ def _video_tab(show_gradcam: bool):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Webcam tab
+# Webcam tab — Cloud compatible with st.camera_input fallback
 # ─────────────────────────────────────────────────────────────────────────────
 def _webcam_tab():
+    # Check if we're in a cloud environment (no display)
+    is_cloud = os.environ.get("STREAMLIT_SHARING_MODE") or os.environ.get("STREAMLIT_SERVER_HEADLESS")
+    
+    # Try WebRTC first (works locally and sometimes on cloud)
+    webrtc_available = False
+    try:
+        from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, RTCConfiguration
+        import av
+        webrtc_available = True
+    except ImportError:
+        webrtc_available = False
+
+    # Create two sub-tabs: Camera Snapshot and Live Stream
+    cam_mode = st.radio(
+        "Capture mode",
+        ["📸 Camera Snapshot", "🎥 Live Stream (Local only)"],
+        horizontal=True,
+        help="Snapshot works everywhere. Live Stream requires local setup."
+    )
+
+    if cam_mode == "📸 Camera Snapshot":
+        _camera_snapshot_mode()
+    else:
+        _live_stream_mode(webrtc_available)
+
+
+def _camera_snapshot_mode():
+    """Browser-based camera capture using st.camera_input — works on Streamlit Cloud."""
+    st.caption("📸 Take a photo using your device camera for deepfake analysis.")
+    
+    camera_image = st.camera_input("Take a picture")
+    
+    if camera_image is not None:
+        try:
+            from PIL import Image
+            from inference.predict import get_transform, preprocess_image, predict
+            import torch
+            
+            model, device = _load_model()
+            
+            # Load and process the image
+            pil_img = Image.open(camera_image).convert("RGB")
+            img_array = np.array(pil_img)
+            
+            col1, col2 = st.columns([1, 1])
+            
+            with col1:
+                st.image(pil_img, caption="Captured Image", use_container_width=True)
+            
+            with col2:
+                with st.spinner("Analyzing..."):
+                    transform = get_transform()
+                    tensor = preprocess_image(img_array, transform)
+                    
+                    with torch.no_grad():
+                        label, confidence = predict(model, tensor, device)
+                        logit = model(tensor.to(device))[0, 0].item()
+                        prob_real = torch.sigmoid(torch.tensor(logit)).item()
+                    
+                    _verdict_row(label, confidence, prob_real)
+                    _certainty_badge(prob_real)
+                    _donut(prob_real)
+                    
+        except Exception as e:
+            st.error(f"Error analyzing image: {str(e)}")
+
+
+def _live_stream_mode(webrtc_available: bool):
+    """WebRTC-based live streaming — works locally, may not work on cloud."""
+    if not webrtc_available:
+        st.warning("⚠️ Live streaming requires `streamlit-webrtc` and `av` packages.")
+        st.code("pip install streamlit-webrtc av", language="bash")
+        st.info("💡 Use **Camera Snapshot** mode instead — it works everywhere!")
+        return
+    
     try:
         from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, RTCConfiguration
         import av
@@ -667,7 +742,7 @@ def _webcam_tab():
                 media_stream_constraints={"video": True, "audio": False},
             )
 
-        # Show latest prediction above the video: verdict, certainty, live gauge, status
+        # Show latest prediction above the video
         if ctx and ctx.video_processor:
             proc = ctx.video_processor
             if proc.label:
@@ -685,16 +760,12 @@ def _webcam_tab():
 
         st.caption(
             "**How to read:** Top bar = P(Real) (green = real, red = fake). "
-            "Verdict above updates every 3 frames. Use **Settings** (top-right) to switch theme."
+            "Verdict above updates every 3 frames."
         )
 
-    except ImportError:
-        st.info("Install streamlit-webrtc to enable the live webcam feed.")
-        st.code("pip install streamlit-webrtc av", language="bash")
-        st.caption(
-            "Alternatively, run the CLI script for webcam inference:  "
-            "`python -m inference.realtime_inference [--gradcam]`"
-        )
+    except Exception as e:
+        st.error(f"Live stream error: {str(e)}")
+        st.info("💡 Try using **Camera Snapshot** mode instead.")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -764,6 +835,16 @@ def main():
         _webcam_tab()
 
 
-if __name__ == "__main__":
+# ─────────────────────────────────────────────────────────────────────────────
+# Main — Called directly (no if __name__ guard for Streamlit Cloud compatibility)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Debug: Confirm app is loading (remove after confirming deployment works)
+# st.write("✅ App loaded successfully")
+
+try:
     main()
+except Exception as e:
+    st.error(f"❌ Application error: {str(e)}")
+    st.exception(e)
     
