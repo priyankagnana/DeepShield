@@ -17,6 +17,23 @@ if ROOT not in sys.path:
 
 MODEL_PATH = os.path.join(ROOT, "saved_models", "best_model.pth")
 
+# Auto-download from GitHub release if model is missing
+MODEL_RELEASE_URL = "https://github.com/priyankagnana/DeepShield/releases/download/model/best_model.pth"
+
+
+def _ensure_model():
+    """Download best_model.pth from GitHub release if not present locally."""
+    if os.path.isfile(MODEL_PATH):
+        return True
+    try:
+        import urllib.request
+        os.makedirs(os.path.dirname(MODEL_PATH), exist_ok=True)
+        urllib.request.urlretrieve(MODEL_RELEASE_URL, MODEL_PATH)
+        return os.path.isfile(MODEL_PATH)
+    except Exception:
+        return False
+
+
 st.set_page_config(
     page_title="DeepShield",
     page_icon="shield",
@@ -725,11 +742,13 @@ def main():
     )
 
     if not os.path.isfile(MODEL_PATH):
-        st.error(
-            f"Model not found at `{MODEL_PATH}`. "
-            "Run `python -m training.train` first."
-        )
-        return
+        with st.spinner("Downloading model from GitHub…"):
+            if not _ensure_model():
+                st.error(
+                    f"Model not found at `{MODEL_PATH}` and download failed. "
+                    "Train locally with `python -m training.train` or check your connection."
+                )
+                return
 
     show_gradcam = _sidebar()
 
