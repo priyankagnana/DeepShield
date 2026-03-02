@@ -6,6 +6,7 @@ Run from project root: streamlit run app.py
 import os
 import sys
 import tempfile
+import time
 
 import cv2
 import numpy as np
@@ -239,6 +240,14 @@ def _certainty_badge(prob_real: float):
     )
 
 
+def _inference_time_display(seconds: float, frames: int | None = None):
+    """Display 'Analyzed in 0.3s' or 'Analyzed N frames in 2.1s' under the verdict."""
+    if frames is not None and frames > 1:
+        st.caption(f"Analyzed {frames} frames in {seconds:.2f}s")
+    else:
+        st.caption(f"Analyzed in {seconds:.2f}s")
+
+
 def _gradcam_histogram(heatmap: np.ndarray):
     """Histogram of Grad-CAM heatmap values (where the model focused)."""
     try:
@@ -431,12 +440,14 @@ def _image_tab(show_gradcam: bool):
             tmp.write(file.read())
             path = tmp.name
         try:
+            t0 = time.perf_counter()
             if show_gradcam:
                 from inference.predict import predict_with_gradcam
                 out = predict_with_gradcam(MODEL_PATH, path)
             else:
                 from inference.predict import predict_image
                 out = predict_image(MODEL_PATH, path)
+            elapsed = time.perf_counter() - t0
         except Exception as e:
             st.error(f"Inference failed: {e}")
             os.unlink(path)
@@ -445,6 +456,7 @@ def _image_tab(show_gradcam: bool):
     _hr()
     _verdict_row(out["label"], out["confidence"], out["prob_real"])
     _certainty_badge(out["prob_real"])
+    _inference_time_display(elapsed)
 
     if show_gradcam:
         c1, c2, c3 = st.columns([1, 1, 0.9])
@@ -454,6 +466,14 @@ def _image_tab(show_gradcam: bool):
         with c2:
             _sec("Grad-CAM")
             st.image(out["overlay"], channels="BGR", width=300)
+            _, png_buf = cv2.imencode(".png", out["overlay"])
+            st.download_button(
+                label="Download overlay",
+                data=png_buf.tobytes(),
+                file_name="gradcam_overlay.png",
+                mime="image/png",
+                key="download_gradcam_image",
+            )
             _gradcam_legend()
         with c3:
             _sec("Authenticity")
@@ -504,7 +524,9 @@ def _video_tab(show_gradcam: bool):
     try:
         with st.spinner(f"Sampling {num_frames} frames…"):
             from inference.predict import predict_video
+            t0 = time.perf_counter()
             result = predict_video(MODEL_PATH, vid_path, num_frames=num_frames)
+            elapsed = time.perf_counter() - t0
 
         real_votes = sum(1 for r in result["frame_results"] if r["label"] == "Real")
         fake_votes = result["frames_analyzed"] - real_votes
@@ -515,6 +537,7 @@ def _video_tab(show_gradcam: bool):
             note=f"{real_votes} real / {fake_votes} fake frames",
         )
         _certainty_badge(result["prob_real"])
+        _inference_time_display(elapsed, result["frames_analyzed"])
 
         # Metrics row: frames, avg P(Real), real/fake counts, stability (std)
         probs = [r["prob_real"] for r in result["frame_results"]] if result["frame_results"] else []
