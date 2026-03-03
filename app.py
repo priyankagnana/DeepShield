@@ -248,6 +248,15 @@ def _inference_time_display(seconds: float, frames: int | None = None):
         st.caption(f"Analyzed in {seconds:.2f}s")
 
 
+def _copy_summary(label: str, confidence: float, prob_real: float, frames: int | None = None):
+    """Show a one-line summary in a code block for easy copy-paste."""
+    line = f"DeepShield: {label} · {confidence:.1%} confidence · P(Real)={prob_real:.3f}"
+    if frames is not None and frames > 1:
+        line += f" · {frames} frames"
+    st.caption("Copy summary:")
+    st.code(line, language=None)
+
+
 def _gradcam_histogram(heatmap: np.ndarray):
     """Histogram of Grad-CAM heatmap values (where the model focused)."""
     try:
@@ -457,6 +466,7 @@ def _image_tab(show_gradcam: bool):
     _verdict_row(out["label"], out["confidence"], out["prob_real"])
     _certainty_badge(out["prob_real"])
     _inference_time_display(elapsed)
+    _copy_summary(out["label"], out["confidence"], out["prob_real"])
 
     if show_gradcam:
         c1, c2, c3 = st.columns([1, 1, 0.9])
@@ -538,6 +548,10 @@ def _video_tab(show_gradcam: bool):
         )
         _certainty_badge(result["prob_real"])
         _inference_time_display(elapsed, result["frames_analyzed"])
+        _copy_summary(
+            result["label"], result["confidence"], result["prob_real"],
+            frames=result["frames_analyzed"],
+        )
 
         # Metrics row: frames, avg P(Real), real/fake counts, stability (std)
         probs = [r["prob_real"] for r in result["frame_results"]] if result["frame_results"] else []
